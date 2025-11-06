@@ -1,3 +1,171 @@
+-- Mobile & iPad Responsive Support for MacLib
+local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+
+-- Device detection
+local isMobile = UserInputService.TouchEnabled and not UserInputService.MouseEnabled
+local isTablet = false
+local isDesktop = not isMobile
+
+-- Detect tablet by screen aspect ratio
+if isMobile then
+    local viewportSize = workspace.CurrentCamera.ViewportSize
+    local aspectRatio = viewportSize.X / viewportSize.Y
+    isTablet = aspectRatio > 1.2 and aspectRatio < 1.8 and math.min(viewportSize.X, viewportSize.Y) > 700
+end
+
+-- Responsive settings
+local responsiveSettings = {
+    Mobile = {
+        Size = UDim2.fromScale(0.95, 0.85),
+        Position = UDim2.fromScale(0.5, 0.5),
+        MinSize = Vector2.new(300, 400),
+        FontSizeMultiplier = 0.9
+    },
+    Tablet = {
+        Size = UDim2.fromScale(0.85, 0.8),
+        Position = UDim2.fromScale(0.5, 0.5),
+        MinSize = Vector2.new(500, 500),
+        FontSizeMultiplier = 0.95
+    },
+    Desktop = {
+        Size = UDim2.fromOffset(868, 650),
+        Position = UDim2.fromScale(0.5, 0.5),
+        MinSize = Vector2.new(600, 400),
+        FontSizeMultiplier = 1
+    }
+}
+
+-- Get settings for current device
+local currentDevice = isTablet and "Tablet" or (isMobile and "Mobile" or "Desktop")
+local deviceSettings = responsiveSettings[currentDevice]
+
+-- Apply responsive settings to MacLib
+local originalWindow = nil
+
+-- Override MacLib:Window function if it exists
+if MacLib and MacLib.Window then
+    originalWindow = MacLib.Window
+    
+    MacLib.Window = function(self, Settings)
+        -- Apply responsive settings
+        Settings.Size = Settings.Size or deviceSettings.Size
+        Settings.Position = Settings.Position or deviceSettings.Position
+        
+        -- Call original window function
+        local windowFunctions = originalWindow(self, Settings)
+        
+        -- Additional mobile adjustments
+        if isMobile then
+            -- Make sure the window is properly sized for mobile
+            local base = windowFunctions and windowFunctions.Parent and windowFunctions.Parent:FindFirstChild("Base")
+            if base then
+                base.Size = deviceSettings.Size
+                base.Position = deviceSettings.Position
+                
+                -- Make window more touch-friendly
+                if isTablet then
+                    -- Tablet-specific adjustments
+                    base.Size = UDim2.fromScale(0.8, 0.75)
+                else
+                    -- Phone-specific adjustments  
+                    base.Size = UDim2.fromScale(0.95, 0.85)
+                end
+            end
+        end
+        
+        return windowFunctions
+    end
+end
+
+-- Mobile drag support
+if isMobile then
+    local function setupMobileDrag(gui)
+        local base = gui:FindFirstChild("Base")
+        if not base then return end
+        
+        local dragButton = Instance.new("TextButton")
+        dragButton.Name = "MobileDragHandle"
+        dragButton.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+        dragButton.BackgroundTransparency = 0.9
+        dragButton.BorderSizePixel = 0
+        dragButton.Size = UDim2.new(1, 0, 0, 30)
+        dragButton.Text = ""
+        dragButton.ZIndex = 1000
+        
+        local dragCorner = Instance.new("UICorner")
+        dragCorner.CornerRadius = UDim.new(0, 8)
+        dragCorner.Parent = dragButton
+        
+        dragButton.Parent = base
+        
+        -- Drag functionality
+        local dragging = false
+        local dragInput
+        local dragStart
+        local startPos
+        
+        local function update(input)
+            local delta = input.Position - dragStart
+            base.Position = UDim2.new(
+                startPos.X.Scale, startPos.X.Offset + delta.X,
+                startPos.Y.Scale, startPos.Y.Offset + delta.Y
+            )
+        end
+        
+        dragButton.InputBegan:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.Touch then
+                dragging = true
+                dragStart = input.Position
+                startPos = base.Position
+                
+                TweenService:Create(dragButton, TweenInfo.new(0.1), {
+                    BackgroundTransparency = 0.7
+                }):Play()
+            end
+        end)
+        
+        dragButton.InputChanged:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.Touch then
+                dragInput = input
+            end
+        end)
+        
+        UserInputService.InputChanged:Connect(function(input)
+            if input == dragInput and dragging then
+                update(input)
+            end
+        end)
+        
+        dragButton.InputEnded:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.Touch then
+                dragging = false
+                TweenService:Create(dragButton, TweenInfo.new(0.2), {
+                    BackgroundTransparency = 0.9
+                }):Play()
+            end
+        end)
+    end
+    
+    -- Apply mobile drag when GUI is created
+    if originalWindow then
+        local originalGetGui = GetGui
+        GetGui = function()
+            local gui = originalGetGui()
+            setupMobileDrag(gui)
+            return gui
+        end
+    end
+end
+
+-- Print device info for debugging
+print(string.format("MacLib Responsive: %s (Mobile: %s, Tablet: %s)", currentDevice, tostring(isMobile), tostring(isTablet)))
+
+return deviceSettings
+
+
 local MacLib = { 
 	Options = {}, 
 	Folder = "Maclib", 
@@ -5876,5 +6044,6 @@ function MacLib:Demo()
 	tabs.Main:Select()
 	MacLib:LoadAutoLoadConfig()
 end
+
 
 return MacLib
